@@ -1,6 +1,6 @@
-# Advent Of Code Zig Template
+# Advent Of Code Zig 
 
-This repo provides a template for Advent of Code participants using Zig.  It contains a main file for each day, a build.zig file set up with targets for each day, and Visual Studio Code files for debugging.
+Solving Advent of Code 2021 using Zig.  It contains a main file for each day, a build.zig file set up with targets for each day, and Visual Studio Code files for debugging.
 
 This template tracks the master branch of Zig, *not* 0.8.1.  It may not work with older versions.
 
