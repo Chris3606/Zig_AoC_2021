@@ -6,11 +6,10 @@ const StrMap = std.StringHashMap;
 const BitSet = std.DynamicBitSet;
 const Str = []const u8;
 
-var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};
+pub var gpa_impl = std.heap.GeneralPurposeAllocator(.{}){};
 pub const gpa = &gpa_impl.allocator;
 
 // Add utility functions here
-
 
 // Useful stdlib functions
 const tokenize = std.mem.tokenize;

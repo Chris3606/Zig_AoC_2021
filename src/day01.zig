@@ -11,8 +11,51 @@ const gpa = util.gpa;
 
 const data = @embedFile("../data/day01.txt");
 
-pub fn main() !void {
+pub fn part1(nums: []u32) !usize {
+    var num_increments: usize = 0;
+    var last_num: u32 = ~@as(u32, 0);
+    for (nums) |num| {
+        if (num > last_num) {
+            num_increments += 1;
+        }
 
+        last_num = num;
+    }
+
+    return num_increments;
+}
+
+pub fn part2(allocator: *Allocator, nums: []u32) !usize {
+    var sliding_windows = List(u32).init(allocator);
+    defer sliding_windows.deinit();
+
+    var i: usize = 0;
+    while (i <= nums.len - 3) : (i += 1) {
+        const sum = nums[i] + nums[i + 1] + nums[i + 2];
+        try sliding_windows.append(sum);
+    }
+
+    return part1(sliding_windows.items);
+}
+
+pub fn main() !void {
+    defer if (util.gpa_impl.deinit()) unreachable;
+
+    var nums = List(u32).init(gpa);
+    defer nums.deinit();
+
+    var it = tokenize(u8, data, "\n");
+
+    while (it.next()) |line| {
+        const num = try parseInt(u32, line, 10);
+        try nums.append(num);
+    }
+
+    const part1_result = try part1(nums.items);
+    print("Part 1 - Increases: {d}\n", .{part1_result});
+
+    const part2_result = try part2(gpa, nums.items);
+    print("Part 2 - Increases: {d}\n", .{part2_result});
 }
 
 // Useful stdlib functions
