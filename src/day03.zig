@@ -1,66 +1,51 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
-const List = std.ArrayList;
-const Map = std.AutoHashMap;
-const StrMap = std.StringHashMap;
-const BitSet = std.DynamicBitSet;
-const Str = []const u8;
-
 const util = @import("util.zig");
-const gpa = util.gpa;
 
 const data = @embedFile("../data/day03.txt");
+const one = @as(u32, 1);
 
+// Wrapper struct for gamma and epsilon
 pub const GammaEpsilon = struct {
     gamma: u32 = 0,
     epsilon: u32 = 0,
 };
 
-pub const Ratings = struct {
-    o2: u32 = 0,
-    co2: u32 = 0,
-};
+/// Get an integer representing the most common bit-values in the input set.
+///
+/// The resulting number will have a 1 in a given bit-position if the inputs have mostly 1's at that
+/// position, or an equal number of 1's as 0's in that position.  The resulting number will have a 0
+/// in that bit position otherwise.
+pub fn getMostCommonBitSet(num_bits: u5, inputs: []u32) u32 {
+    var result: u32 = 0;
 
-/// Set that represents most common bits in a set, of numbers by position, with ties having both set.
-pub const MostCommonBitSet = struct {
-    zero: u32 = 0,
-    one: u32 = 0,
-};
-
-pub fn getMostCommonBitSet(num_bits: u5, inputs: []u32) MostCommonBitSet {
-    var result = MostCommonBitSet{};
-
-    var i: u5 = 0;
+    var i: @TypeOf(num_bits) = 0;
     while (i < num_bits) : (i += 1) {
         var ones: u32 = 0;
         for (inputs) |input| {
-            if ((@as(u32, 1) << i) & input != 0) ones += 1;
+            if ((one << i) & input != 0) ones += 1;
         }
 
         // More ones than not (or equal)
         if (inputs.len - ones <= ones) {
-            result.one |= (@as(u32, 1) << i);
-        }
-
-        // More zeros than not (or equal)
-        if (inputs.len - ones >= ones) {
-            result.zero |= (@as(u32, 1) << i);
+            result |= (one << i);
         }
     }
 
     return result;
 }
 
+/// Calculate gamma and epsilon as per part 1 algorithm.
 pub fn getGammaAndEpsilon(inputs: []u32, num_bits: u5) GammaEpsilon {
     var result = GammaEpsilon{};
-    const mostCommon = getMostCommonBitSet(num_bits, inputs);
+    const most_common = getMostCommonBitSet(num_bits, inputs);
 
     var i: u5 = 0;
     while (i < num_bits) : (i += 1) {
-        if ((mostCommon.one & (@as(u32, 1) << i)) != 0) {
-            result.gamma |= (@as(u32, 1) << i);
+        const current_bit = one << i;
+        if ((most_common & current_bit) != 0) {
+            result.gamma |= current_bit;
         } else {
-            result.epsilon |= (@as(u32, 1) << i);
+            result.epsilon |= current_bit;
         }
 
         if (i == 31) break;
@@ -69,109 +54,57 @@ pub fn getGammaAndEpsilon(inputs: []u32, num_bits: u5) GammaEpsilon {
     return result;
 }
 
-pub fn getO2Rating(inputs: []u32, num_bits: u5) !u32 {
-    var o2_values = List(u32).fromOwnedSlice(gpa, try gpa.dupe(u32, inputs));
-    defer o2_values.deinit();
+/// Reduces the given inputs down to a single value, according to the part 2 algorithm.  If
+/// use_most_common is true, the _most_ common bit is the one that is taken at any given position;
+/// otherwise, the _least_ common bit is taken.  Ties are broken as described in the part 2 algorithm.
+pub fn reduceInputsToCommonalitySet(allocator: *util.Allocator, inputs: []u32, num_bits: u5, use_most_common: bool) !u32 {
+    // Duplicate input values so we can start eliminating them
+    var remaining_inputs = util.List(u32).fromOwnedSlice(allocator, try allocator.dupe(u32, inputs));
+    defer remaining_inputs.deinit();
 
     var bit: u5 = num_bits - 1;
     while (bit >= 0) : (bit -= 1) {
-        var most_common_set = getMostCommonBitSet(num_bits, o2_values.items);
+        const cur_bit = (one << bit);
+        var most_common_set = getMostCommonBitSet(num_bits, remaining_inputs.items);
+        var most_common = if (use_most_common) most_common_set & cur_bit else ~most_common_set & cur_bit;
 
-        var most_common = most_common_set.one & (@as(u32, 1) << bit);
-
-        var idx = o2_values.items.len - 1;
+        var idx = remaining_inputs.items.len - 1;
         while (idx >= 0) : (idx -= 1) {
-            var item = o2_values.items[idx];
+            var item = remaining_inputs.items[idx];
 
-            if ((item & (@as(u32, 1) << bit)) != most_common) {
-                _ = o2_values.orderedRemove(idx);
+            if ((item & cur_bit) != most_common) {
+                _ = remaining_inputs.orderedRemove(idx);
             }
-            if (o2_values.items.len == 1) return o2_values.items[0];
+            if (remaining_inputs.items.len == 1) return remaining_inputs.items[0];
             if (idx == 0) break;
         }
 
         // Violates invariants we're given; there _has_ to be one left
-        if (bit == 0) unreachable;
+        if (bit == 0) return error.InvalidInput;
     }
-
-    unreachable;
-}
-
-pub fn getCO2Rating(inputs: []u32, num_bits: u5) !u32 {
-    var co2_values = List(u32).fromOwnedSlice(gpa, try gpa.dupe(u32, inputs));
-    defer co2_values.deinit();
-
-    var bit: u5 = num_bits - 1;
-    while (bit >= 0) : (bit -= 1) {
-        var most_common_set = getMostCommonBitSet(num_bits, co2_values.items);
-
-        var most_common = ~most_common_set.one & (@as(u32, 1) << bit);
-
-        var idx = co2_values.items.len - 1;
-        while (idx >= 0) : (idx -= 1) {
-            var item = co2_values.items[idx];
-
-            if ((item & (@as(u32, 1) << bit)) != most_common) {
-                _ = co2_values.orderedRemove(idx);
-            }
-            if (co2_values.items.len == 1) return co2_values.items[0];
-            if (idx == 0) break;
-        }
-
-        // Violates invariants we're given; there _has_ to be one left
-        if (bit == 0) unreachable;
-    }
-
-    unreachable;
 }
 
 pub fn main() !void {
-    defer if (util.gpa_impl.deinit()) unreachable;
+    defer std.debug.assert(!util.gpa_impl.deinit());
 
-    var inputs = List(u32).init(gpa);
+    var inputs = util.List(u32).init(util.gpa);
     defer inputs.deinit();
 
     var it = std.mem.tokenize(u8, data, "\n");
     while (it.next()) |line| {
-        try inputs.append(try parseInt(u32, line, 2));
+        try inputs.append(util.parseInt(u32, line, 2) catch {
+            return error.InvalidInput;
+        });
     }
 
     var result_pt1 = getGammaAndEpsilon(inputs.items, 12);
-    print("Pt 1 Gamma-Epsilon: {}\n", .{result_pt1});
-    print("Pt 1 Gamma * Epsilon: {d}\n", .{result_pt1.gamma * result_pt1.epsilon});
+    util.print("Pt 1 Gamma-Epsilon: {}\n", .{result_pt1});
+    util.print("Pt 1 Gamma * Epsilon: {d}\n", .{result_pt1.gamma * result_pt1.epsilon});
 
-    var o2_rating = try getO2Rating(inputs.items, 12);
-    print("O2 Rating: {}\n", .{o2_rating});
-    var co2_rating = try getCO2Rating(inputs.items, 12);
-    print("CO2 Rating: {}\n", .{co2_rating});
+    var o2_rating = try reduceInputsToCommonalitySet(util.gpa, inputs.items, 12, true);
+    util.print("O2 Rating: {}\n", .{o2_rating});
+    var co2_rating = try reduceInputsToCommonalitySet(util.gpa, inputs.items, 12, false);
+    util.print("CO2 Rating: {}\n", .{co2_rating});
 
-    print("O2 * CO2: {d}\n", .{o2_rating * co2_rating});
+    util.print("O2 * CO2: {d}\n", .{o2_rating * co2_rating});
 }
-
-// Useful stdlib functions
-const tokenize = std.mem.tokenize;
-const split = std.mem.split;
-const indexOf = std.mem.indexOfScalar;
-const indexOfAny = std.mem.indexOfAny;
-const indexOfStr = std.mem.indexOfPosLinear;
-const lastIndexOf = std.mem.lastIndexOfScalar;
-const lastIndexOfAny = std.mem.lastIndexOfAny;
-const lastIndexOfStr = std.mem.lastIndexOfLinear;
-const trim = std.mem.trim;
-const sliceMin = std.mem.min;
-const sliceMax = std.mem.max;
-
-const parseInt = std.fmt.parseInt;
-const parseFloat = std.fmt.parseFloat;
-
-const min = std.math.min;
-const min3 = std.math.min3;
-const max = std.math.max;
-const max3 = std.math.max3;
-
-const print = std.debug.print;
-const assert = std.debug.assert;
-
-const sort = std.sort.sort;
-const asc = std.sort.asc;
-const desc = std.sort.desc;
