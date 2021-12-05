@@ -21,9 +21,10 @@ pub fn numberOfIntersections(lines: []const util.Line(i32), consider_diagonals: 
         delta.x = if (delta.x == 0) @as(i32, 0) else if (delta.x < 0) @as(i32, -1) else @as(i32, 1);
         delta.y = if (delta.y == 0) @as(i32, 0) else if (delta.y < 0) @as(i32, -1) else @as(i32, 1);
 
-        // Iterate over line
+        // Iterate over line.  We need to ensure the end value allows us to _include_ the last point.
         var pos = line.start;
-        while (pos.x != line.end.x + delta.x or pos.y != line.end.y + delta.y) : (pos = util.Point(i32).add(pos, delta)) {
+        const end = util.Point(i32){ .x = line.end.x + delta.x, .y = line.end.y + delta.y };
+        while (!std.meta.eql(pos, end)) : (pos = util.Point(i32).add(pos, delta)) {
             try map.put(pos, (map.get(pos) orelse 0) + 1);
         }
     }
