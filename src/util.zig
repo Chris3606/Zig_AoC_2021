@@ -12,6 +12,59 @@ pub const gpa = &gpa_impl.allocator;
 // Input-handling errors.
 pub const Error = error{InvalidInput};
 
+// Basic point for a 2D integral grid.
+pub fn Point(comptime T: type) type {
+    return struct {
+        const Self = @This();
+
+        x: T,
+        y: T,
+
+        /// Given known grid width, maps a location to a unique 1D array index that represents its location.
+        pub fn toIndex(self: Self, width: u32) usize {
+            return width * self.y + self.x;
+        }
+
+        /// Given known grid width, maps a location to a unique 1D array index that represents its location.
+        pub fn xyToIndex(x: T, y: T, width: u32) usize {
+            return width * y + x;
+        }
+
+        /// Adds the two given points together and returns a new point.
+        pub fn add(p1: Point(T), p2: Point(T)) Point(T) {
+            return .{ .x = p1.x + p2.x, .y = p1.y + p2.y };
+        }
+
+        pub fn subtract(p1: Point(T), p2: Point(T)) Point(T) {
+            return .{ .x = p1.x - p2.x, .y = p1.y - p2.y };
+        }
+    };
+}
+
+/// Basic bearings of lines
+pub const LineType = enum {
+    Horizontal,
+    Vertical,
+    Diagonal,
+};
+
+/// Line consisting of 2 points
+pub fn Line(comptime T: type) type {
+    return struct {
+        const Self = @This();
+
+        start: Point(T),
+        end: Point(T),
+
+        pub fn getType(self: Self) LineType {
+            if (self.start.x == self.end.x) return .Vertical;
+            if (self.start.y == self.end.y) return .Horizontal;
+
+            return .Diagonal;
+        }
+    };
+}
+
 // Useful stdlib functions
 pub const tokenize = std.mem.tokenize;
 pub const split = std.mem.split;
@@ -32,6 +85,7 @@ pub const min = std.math.min;
 pub const min3 = std.math.min3;
 pub const max = std.math.max;
 pub const max3 = std.math.max3;
+pub const absInt = std.math.absInt;
 
 pub const print = std.debug.print;
 pub const assert = std.debug.assert;

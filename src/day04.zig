@@ -36,7 +36,7 @@ const Board = struct {
 
     /// Maps a board location to the index in the tiles array containing its tile.
     pub fn toIndex(x: u8, y: u8) usize {
-        return board_size * y + x;
+        return util.Point(u8).xyToIndex(x, y, board_size);
     }
 
     /// Checks rows/columns as per part 1 problem statement
@@ -178,12 +178,12 @@ pub fn main() !void {
         // Remove current winning board from list for next sim step
         _ = current_boards.swapRemove(last_winner.board_idx);
     }
-    
+
     // Print first winner and score (as per part 1)
     if (first_winner) |winner| {
-    util.print("Winning board score is: {d}\n", .{winner.board.sumUnmarkedNumbers() * winner.number});
+        util.print("Winning board score is: {d}\n", .{winner.board.sumUnmarkedNumbers() * winner.number});
     } else unreachable;
-    
+
     // Print losing board and score (as per part 2)
     util.print("Losing board score is: {d}\n", .{last_winner.board.sumUnmarkedNumbers() * last_winner.number});
 }
