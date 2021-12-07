@@ -65,6 +65,11 @@ pub fn Line(comptime T: type) type {
     };
 }
 
+/// Returns the first integer larger than or equal to x, casted to an integer of the given type.
+pub fn ceilCast(comptime T: type, x: anytype) T {
+    return @floatToInt(T, std.math.ceil(x));
+}
+
 // Useful stdlib functions
 pub const tokenize = std.mem.tokenize;
 pub const split = std.mem.split;
@@ -86,6 +91,7 @@ pub const min3 = std.math.min3;
 pub const max = std.math.max;
 pub const max3 = std.math.max3;
 pub const absInt = std.math.absInt;
+pub const absCast = std.math.absCast;
 
 pub const print = std.debug.print;
 pub const assert = std.debug.assert;

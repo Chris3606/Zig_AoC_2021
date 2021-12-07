@@ -24,10 +24,10 @@ pub fn findEasiestAlignmentPosition(positions: []const u32, fuel_calc: FuelCalcu
     cur_align_pos: while (i <= max) : (i += 1) {
         var fuel: u32 = 0;
         for (positions) |pos| {
-            const move_distance = @intCast(u32, try util.absInt(@intCast(i32, pos) - @intCast(i32, i)));
+            const move_distance = util.absCast(@intCast(i32, pos) - @intCast(i32, i));
             fuel += switch (fuel_calc) {
                 .Linear => move_distance,
-                .GeometricSum => @floatToInt(u32, std.math.ceil(@intToFloat(f32, move_distance) * (@intToFloat(f32, move_distance) + 1.0) / 2.0)),
+                .GeometricSum => util.ceilCast(u32, @intToFloat(f32, move_distance) * (@intToFloat(f32, move_distance) + 1.0) / 2.0),
             };
             if (fuel >= minFuel) continue :cur_align_pos;
         }
