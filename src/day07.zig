@@ -7,14 +7,21 @@ const data = @embedFile("../data/day07.txt");
 const FuelCalculation = enum {
     // Fuel cost is the equal to the distance moved
     Linear,
-    // Fuel cost is the geometric summation of all terms between 1 and the distance moved; eg.
-    // fuel cost for move 3 is 3 + 2 + 1 = 6
+    // Fuel cost is the geometric summation of all terms between 1 and the distance moved.
     GeometricSum,
 };
 
+/// Utilizes a closed-form solution to find a geometric sum of all terms between 1 and n.
+///
+/// For example, for n = 3, the function returns 1 + 2 + 3 = 6 via the standard closed-form solution
+/// n * (n-1) / 2.
+pub fn geometricSummation(n: u32) u32 {
+    return @floatToInt(u32, @intToFloat(f32, n) * (@intToFloat(f32, n) + 1.0) / 2.0);
+}
+
 // Find the fuel cost of the alignment position with the lowest fuel cost, given the current positions.
 // Fuel usage will be calculated according to the given algorithm.
-pub fn findEasiestAlignmentPosition(positions: []const u32, fuel_calc: FuelCalculation) !u32 {
+pub fn findEasiestAlignmentPosition(positions: []const u32, fuel_calculation: FuelCalculation) !u32 {
     const min = util.sliceMin(u32, positions);
     const max = util.sliceMax(u32, positions);
 
@@ -25,9 +32,9 @@ pub fn findEasiestAlignmentPosition(positions: []const u32, fuel_calc: FuelCalcu
         var fuel: u32 = 0;
         for (positions) |pos| {
             const move_distance = util.absCast(@intCast(i32, pos) - @intCast(i32, i));
-            fuel += switch (fuel_calc) {
+            fuel += switch (fuel_calculation) {
                 .Linear => move_distance,
-                .GeometricSum => util.ceilCast(u32, @intToFloat(f32, move_distance) * (@intToFloat(f32, move_distance) + 1.0) / 2.0),
+                .GeometricSum => geometricSummation(move_distance),
             };
             if (fuel >= minFuel) continue :cur_align_pos;
         }
