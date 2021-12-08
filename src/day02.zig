@@ -3,18 +3,13 @@ const util = @import("util.zig");
 
 const data = @embedFile("../data/day02.txt");
 
-const Point = struct {
-    x: i32 = 0,
-    y: i32 = 0,
-};
-
 const MoveCommand = union(enum) {
     up_down: i32,
     forward: i32,
 };
 
-fn followCommandsPt1(commands: []const MoveCommand) Point {
-    var point = Point{};
+fn followCommandsPt1(commands: []const MoveCommand) util.Point(i32) {
+    var point = util.Point(i32){};
 
     for (commands) |command| {
         switch (command) {
@@ -26,9 +21,9 @@ fn followCommandsPt1(commands: []const MoveCommand) Point {
     return point;
 }
 
-fn followCommandsPt2(commands: []const MoveCommand) Point {
+fn followCommandsPt2(commands: []const MoveCommand) util.Point(i32) {
     var aim: i32 = 0;
-    var position = Point{};
+    var position = util.Point(i32){};
 
     for (commands) |command| {
         switch (command) {

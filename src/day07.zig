@@ -25,7 +25,7 @@ pub fn findEasiestAlignmentPosition(positions: []const u32, fuel_calculation: Fu
     const min = util.sliceMin(u32, positions);
     const max = util.sliceMax(u32, positions);
 
-    var minFuel: u32 = ~@as(u32, 0);
+    var minFuel: u32 = std.math.maxInt(u32);
 
     var i: u32 = min;
     cur_align_pos: while (i <= max) : (i += 1) {

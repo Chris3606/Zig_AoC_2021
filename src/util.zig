@@ -17,8 +17,8 @@ pub fn Point(comptime T: type) type {
     return struct {
         const Self = @This();
 
-        x: T,
-        y: T,
+        x: T = 0,
+        y: T = 0,
 
         /// Given known grid width, maps a location to a unique 1D array index that represents its location.
         pub fn toIndex(self: Self, width: u32) usize {

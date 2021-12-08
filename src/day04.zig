@@ -84,14 +84,18 @@ const Board = struct {
 /// The board that won, its index in the boards slice given to the sim function, and the number it won on,
 /// as well as that number's index in the numbers array given.
 const WinnerInfo = struct {
+    /// Board that won.
     board: *Board,
+    /// Index of the winning board in the list of boards that was processed.
     board_idx: usize,
+    /// Final number called before the winning board won.
     number: u8,
+    /// Index of the final number called before the winning board won.
     number_idx: usize,
 };
 
 /// Simulates bingo on the boards given using the given numbers until a winner is found; then
-/// returns a pointer to the board that won.
+/// returns information about the winning values.
 fn simulateBingo(numbers: []const u8, boards: []*Board) !WinnerInfo {
     for (numbers) |number, number_idx| {
         // Mark number on all boards, assuming it only occurs once per board
