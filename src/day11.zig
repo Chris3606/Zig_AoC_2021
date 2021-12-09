@@ -4,5 +4,8 @@ const util = @import("util.zig");
 const data = @embedFile("../data/day11.txt");
 
 pub fn main() !void {
-    defer std.debug.assert(!util.gpa_impl.deinit());
+    defer {
+        const leaks = util.gpa_impl.deinit();
+        std.debug.assert(!leaks);
+    }
 }
