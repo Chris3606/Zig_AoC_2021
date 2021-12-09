@@ -85,7 +85,10 @@ pub fn reduceInputsToCommonalitySet(allocator: *util.Allocator, inputs: []u32, n
 }
 
 pub fn main() !void {
-    defer std.debug.assert(!util.gpa_impl.deinit());
+    defer {
+        const leaks = util.gpa_impl.deinit();
+        std.debug.assert(!leaks);
+    }
 
     var inputs = util.List(u32).init(util.gpa);
     defer inputs.deinit();

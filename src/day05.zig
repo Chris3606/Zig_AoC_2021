@@ -40,7 +40,10 @@ pub fn numberOfIntersections(lines: []const util.Line(i32), consider_diagonals: 
 }
 
 pub fn main() !void {
-    defer std.debug.assert(!util.gpa_impl.deinit());
+    defer {
+        const leaks = util.gpa_impl.deinit();
+        std.debug.assert(!leaks);
+    }
 
     var lines = util.List(util.Line(i32)).init(util.gpa);
     defer lines.deinit();

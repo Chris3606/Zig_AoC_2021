@@ -46,7 +46,10 @@ pub fn findEasiestAlignmentPosition(positions: []const u32, fuel_calculation: Fu
 }
 
 pub fn main() !void {
-    defer std.debug.assert(!util.gpa_impl.deinit());
+    defer {
+        const leaks = util.gpa_impl.deinit();
+        std.debug.assert(!leaks);
+    }
 
     var positions = util.List(u32).init(util.gpa);
     defer positions.deinit();

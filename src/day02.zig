@@ -39,7 +39,10 @@ fn followCommandsPt2(commands: []const MoveCommand) util.Point(i32) {
 }
 
 pub fn main() !void {
-    defer std.debug.assert(!util.gpa_impl.deinit());
+    defer {
+        const leaks = util.gpa_impl.deinit();
+        std.debug.assert(!leaks);
+    }
 
     var commands = util.List(MoveCommand).init(util.gpa);
     defer commands.deinit();

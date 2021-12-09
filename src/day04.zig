@@ -122,7 +122,10 @@ fn simulateBingo(numbers: []const u8, boards: []*Board) !WinnerInfo {
 }
 
 pub fn main() !void {
-    defer std.debug.assert(!util.gpa_impl.deinit());
+    defer {
+        const leaks = util.gpa_impl.deinit();
+        std.debug.assert(!leaks);
+    }
 
     var it = util.split(u8, data, "\n\n");
 

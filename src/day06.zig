@@ -54,7 +54,10 @@ pub fn simulateLanternfish2(allocator: *util.Allocator, initial_lanternfish: []c
 }
 
 pub fn main() !void {
-    defer std.debug.assert(!util.gpa_impl.deinit());
+    defer {
+        const leaks = util.gpa_impl.deinit();
+        std.debug.assert(!leaks);
+    }
 
     var lanternfish = util.List(u8).init(util.gpa);
     defer lanternfish.deinit();
