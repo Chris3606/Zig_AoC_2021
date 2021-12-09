@@ -70,6 +70,32 @@ pub fn ceilCast(comptime T: type, x: anytype) T {
     return @floatToInt(T, std.math.ceil(x));
 }
 
+/// Errors returned by the find algorithm.
+pub const FindError = error{
+    /// Element that was searched for could not be found
+    NotFound,
+};
+
+// Searches slice for element, using std.meta.eql for comparison.  Returns index of element if found,
+// or error if not found.
+pub fn find(comptime T: type, slice: []const T, element: T) !usize {
+    for (slice) |elem, idx| {
+        if (std.meta.eql(elem, element)) return idx;
+    }
+
+    return error.NotFound;
+}
+
+/// Searches the slice for element, using std.meta.eql for comparison.  Returns true if element
+/// is found, false otherwise.
+pub fn contains(comptime T: type, slice: []const T, element: T) bool {
+    _ = find(T, slice, element) catch {
+        return false;
+    };
+
+    return true;
+}
+
 // Useful stdlib functions
 pub const tokenize = std.mem.tokenize;
 pub const split = std.mem.split;
