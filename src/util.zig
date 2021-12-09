@@ -22,12 +22,18 @@ pub fn Point(comptime T: type) type {
 
         /// Given known grid width, maps a location to a unique 1D array index that represents its location.
         pub fn toIndex(self: Self, width: u32) usize {
-            return width * self.y + self.x;
+            return xyToIndex(self.x, self.y, width);
         }
 
         /// Given known grid width, maps a location to a unique 1D array index that represents its location.
         pub fn xyToIndex(x: T, y: T, width: u32) usize {
-            return width * y + x;
+            return width * @intCast(u32, y) + @intCast(u32, x);
+        }
+
+        /// Given known grid width, and an index in a 1D array mapped via toIndex, gets the Point that
+        /// represents its location.
+        pub fn fromIndex(index: usize, width: u32) Self {
+            return Self{ .x = @intCast(T, index % width), .y = @intCast(T, index / width) };
         }
 
         /// Adds the two given points together and returns a new point.
@@ -40,6 +46,8 @@ pub fn Point(comptime T: type) type {
         }
     };
 }
+
+pub const cardinalNeighbors = [_]Point(i32){ .{ .x = 0, .y = -1 }, .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 1 }, .{ .x = -1, .y = 0 } };
 
 /// Basic bearings of lines
 pub const LineType = enum {
@@ -94,6 +102,19 @@ pub fn contains(comptime T: type, slice: []const T, element: T) bool {
     };
 
     return true;
+}
+
+/// Use with std.sort.sort to sort a list of slices in descending order based on their length.
+/// Similar to std.sort.asc.
+pub fn sliceLenDesc(comptime T: type) fn (void, []const T, []const T) bool {
+    const impl = struct {
+        fn inner(context: void, a: []const T, b: []const T) bool {
+            _ = context;
+            return a.len > b.len;
+        }
+    };
+
+    return impl.inner;
 }
 
 // Useful stdlib functions
