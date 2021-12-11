@@ -47,7 +47,23 @@ pub fn Point(comptime T: type) type {
     };
 }
 
-pub const cardinalNeighbors = [_]Point(i32){ .{ .x = 0, .y = -1 }, .{ .x = 1, .y = 0 }, .{ .x = 0, .y = 1 }, .{ .x = -1, .y = 0 } };
+pub const cardinalNeighbors = [_]Point(i32){
+    .{ .x = 0, .y = -1 }, // Up
+    .{ .x = 1, .y = 0 }, // Right
+    .{ .x = 0, .y = 1 }, // Down
+    .{ .x = -1, .y = 0 }, // Left
+};
+
+pub const eightWayNeighbors = [_]Point(i32){
+    .{ .x = 0, .y = -1 }, // Up
+    .{ .x = 1, .y = -1 }, // UpRight
+    .{ .x = 1, .y = 0 }, // Right
+    .{ .x = 1, .y = 1 }, // DownRight
+    .{ .x = 0, .y = 1 }, // Down
+    .{ .x = -1, .y = 1 }, // DownLeft
+    .{ .x = -1, .y = 0 }, // Left
+    .{ .x = -1, .y = -1 }, // UpLeft
+};
 
 /// Basic bearings of lines
 pub const LineType = enum {
