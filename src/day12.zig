@@ -1,7 +1,7 @@
 const std = @import("std");
 const util = @import("util.zig");
 
-const data = @embedFile("../data/day12_sample.txt");
+const data = @embedFile("../data/day12.txt");
 
 pub const GraphNode = struct {
     const Self = @This();
@@ -75,7 +75,7 @@ pub const DFSError = error{OutOfMemory};
 /// Takes in a graph, and conducts a variation of depth-first-search on it that is consistent
 /// with the day12 problem statement (allow repeats only in large caves and possibly a single
 /// small cave).  Returns number of paths found between start and end.
-pub fn paths_to_end_dfs(allocator: *util.Allocator, graph: Graph) DFSError!u32 {
+pub fn paths_to_end_dfs(allocator: *util.Allocator, graph: Graph, allow_single_repeats: bool) DFSError!u32 {
     var visited = util.Map(*GraphNode, void).init(allocator);
     defer visited.deinit();
 
@@ -83,18 +83,20 @@ pub fn paths_to_end_dfs(allocator: *util.Allocator, graph: Graph) DFSError!u32 {
     const start = graph.getVertex("start").?;
 
     // Call DFS recursively
-    return try dfs_paths_to_end_recursive(start, &visited);
+    return try dfs_paths_to_end_recursive(start, &visited, allow_single_repeats);
 }
 
 // The recursive element of the day 12 DFS algorithm
-fn dfs_paths_to_end_recursive(node: *GraphNode, visited: *util.Map(*GraphNode, void)) DFSError!u32 {
+fn dfs_paths_to_end_recursive(node: *GraphNode, visited: *util.Map(*GraphNode, void), allow_single_repeat: bool) DFSError!u32 {
     // Label node as discovered, if it isn't a big cave (those, each path is allowed to visit
     // more than once, so we won't mark at all).  We'll mark them as unvisited after we're done
     // processing the current path, so that other paths can visit the same nodes.
-    if (node.id[0] < 'A' or node.id[0] > 'Z') {
-        try visited.put(node, {});
-    }
-    defer _ = visited.remove(node);
+    const count_as_visited = !visited.contains(node) and (node.id[0] < 'A' or node.id[0] > 'Z');
+    if (count_as_visited) try visited.put(node, {});
+
+    defer if (count_as_visited) {
+        _ = visited.remove(node);
+    };
 
     // Since we only care about paths that get to end, we can stop as soon as the path ends up
     // there
@@ -103,8 +105,13 @@ fn dfs_paths_to_end_recursive(node: *GraphNode, visited: *util.Map(*GraphNode, v
     // Process all edges recursively.
     var paths_to_end: u32 = 0;
     for (node.edges.items) |edge_dest| {
+        // If we haven't visited the node yet, we can clearly just proceed to visit it.
+        // If we _have_ already visited the node, but we still have our repeat, count the path anyway
+        // and disallow future repetition (assuming we're not going back to start)
         if (!visited.contains(edge_dest)) {
-            paths_to_end += try dfs_paths_to_end_recursive(edge_dest, visited);
+            paths_to_end += try dfs_paths_to_end_recursive(edge_dest, visited, allow_single_repeat);
+        } else if (allow_single_repeat and !std.mem.eql(u8, edge_dest.id, "start") and !std.mem.eql(u8, edge_dest.id, "end")) {
+            paths_to_end += try dfs_paths_to_end_recursive(edge_dest, visited, false);
         }
     }
 
@@ -138,9 +145,9 @@ pub fn main() !void {
         try graph.addEdge(start, end);
     }
 
-    const paths_to_end_pt1 = paths_to_end_dfs(util.gpa, graph);
+    const paths_to_end_pt1 = paths_to_end_dfs(util.gpa, graph, false);
     util.print("Part 1: Number of paths to \"end\" found is {d}\n", .{paths_to_end_pt1});
 
-    // const paths_to_end_pt2 = paths_to_end_dfs(util.gpa, graph);
-    // util.print("Part 2: Number of paths to \"end\" found is {d}\n", .{paths_to_end_pt2});
+    const paths_to_end_pt2 = paths_to_end_dfs(util.gpa, graph, true);
+    util.print("Part 2: Number of paths to \"end\" found is {d}\n", .{paths_to_end_pt2});
 }
