@@ -89,6 +89,99 @@ pub fn Line(comptime T: type) type {
     };
 }
 
+/// Represents nodes in a graph of items that are of type T.
+pub fn GraphNode(comptime T: type) type {
+    return struct {
+        const Self = @This();
+
+        /// The value this node represents.
+        value: T,
+        /// The vertices this node is (unidirectionally) connected to.
+        edges: List(*Self),
+
+        /// Creates a node for the given value with no edges.
+        pub fn init(value: T, allocator: *Allocator) Self {
+            return Self{
+                .value = value,
+                .edges = List(*Self).init(allocator),
+            };
+        }
+
+        /// Deinitializes the node.
+        pub fn deinit(self: *Self) void {
+            self.edges.deinit();
+        }
+    };
+}
+
+/// A graph structure supporting arbitrary value types for nodes.
+///
+/// Currently, the graph depends on either std.StringHashMap or std.AutoHashMap as applicable,
+/// and does not allow the specification of custom contexts.  This could change in the future.
+pub fn Graph(comptime T: type) type {
+    return struct {
+        const Self = @This();
+        /// Type for nodes in the graph
+        pub const Node = GraphNode(T);
+        /// Hash type used to map vertex values to their corresponding vertices
+        pub const VertexMap = switch (T) {
+            []const u8 => StrMap(*Node),
+            else => Map(T, *Node),
+        };
+
+        /// Map of values to the vertex representing that value, if any such vertex exists.
+        vertices: VertexMap,
+        /// Allocator used for maintaining the graph.
+        allocator: *Allocator,
+
+        /// Initializes a graph which will use the given allocator.
+        pub fn init(allocator: *Allocator) Self {
+            return Self{
+                .vertices = VertexMap.init(allocator),
+                .allocator = allocator,
+            };
+        }
+
+        /// Deinitializes the graph, deallocating all of its vertices in the process.
+        pub fn deinit(self: *Self) void {
+            // Deinitialize vertices and free them
+            var it = self.vertices.valueIterator();
+            while (it.next()) |vertexPtr| {
+                vertexPtr.*.*.deinit();
+                self.allocator.destroy(vertexPtr.*);
+            }
+
+            // Free vertex map
+            self.vertices.deinit();
+        }
+
+        /// Gets the vertex representing the given value, if one exists.  If no vertex exists, it
+        /// creates and adds a vertex to represent the given value, and returns that one.
+        pub fn getOrAddVertex(self: *Self, value: T) !*Node {
+            const result = try self.vertices.getOrPut(value);
+            if (!result.found_existing) {
+                result.value_ptr.* = try self.allocator.create(Node);
+                errdefer result.value_ptr.*.deinit();
+                result.value_ptr.*.* = Node.init(value, self.allocator);
+            }
+
+            return result.value_ptr.*;
+        }
+
+        // Adds an edge between the given vertices, creating vertices as needed.  The edge will be
+        // bidirectional is specified.
+        pub fn addEdge(self: *Self, from_vertex: T, to_vertex: T, bidirectional: bool) !void {
+            // Get or add vertices defined by the edge
+            const from_node = try self.getOrAddVertex(from_vertex);
+            const to_node = try self.getOrAddVertex(to_vertex);
+
+            // Add edges as needed
+            try from_node.edges.append(to_node);
+            if (bidirectional) try to_node.edges.append(from_node);
+        }
+    };
+}
+
 /// Returns the first integer larger than or equal to x, casted to an integer of the given type.
 pub fn ceilCast(comptime T: type, x: anytype) T {
     return @floatToInt(T, std.math.ceil(x));
