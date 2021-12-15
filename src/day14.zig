@@ -1,79 +1,137 @@
 const std = @import("std");
 const util = @import("util.zig");
 
-const data = @embedFile("../data/day14_sample.txt");
+const data = @embedFile("../data/day14.txt");
+
+/// Represents a polymer pair.
+pub const Pair = struct {
+    pub const Self = @This();
+
+    item1: u8,
+    item2: u8,
+
+    pub fn initFromSlice(pair: []const u8) Self {
+        util.assert(pair.len == 2);
+        return .{ .item1 = pair[0], .item2 = pair[1] };
+    }
+};
 
 pub const PolymerSequence = struct {
     const Self = @This();
 
     polymer_template: []const u8,
-    insertion_rules: util.StrMap(u8),
-    polymerization_buffer: util.List(u8),
-    output_frequency: util.Map(u8, u64),
+    insertion_rules: util.Map(Pair, u8),
+    element_frequency: [26]usize,
+    allocator: *util.Allocator,
 
     pub fn init(allocator: *util.Allocator, polymer_template: []const u8) Self {
+        util.assert(polymer_template.len % 2 == 0);
+
         return .{
             .polymer_template = polymer_template,
-            .insertion_rules = util.StrMap(u8).init(allocator),
-            .polymerization_buffer = util.List(u8).init(allocator),
-            .output_frequency = util.Map(u8, u64).init(allocator),
+            .insertion_rules = util.Map(Pair, u8).init(allocator),
+            .element_frequency = std.mem.zeroes([26]usize),
+            .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *Self) void {
-        self.polymerization_buffer.deinit();
         self.insertion_rules.deinit();
-        self.output_frequency.deinit();
     }
 
-    pub fn addInsertionRule(self: *Self, pair: []const u8, value: u8) !void {
-        util.assert(pair.len == 2);
+    pub fn addInsertionRule(self: *Self, pair: Pair, value: u8) !void {
         try self.insertion_rules.put(pair, value);
     }
 
     pub fn polymerize(self: *Self, times: usize) !void {
-        // We'll polymerize a pair at a time to limit the input size
-        var i: usize = 0;
-        while (i <= self.polymer_template.len - 2) : (i += 1) {
-            //std.log.err("Moving to pair {d}.", .{i});
-            defer self.polymerization_buffer.clearRetainingCapacity();
+        // Map of each pair to how often that pair occurs
+        var pair_counts = util.Map(Pair, usize).init(self.allocator);
+        defer pair_counts.deinit();
 
-            // Set input buffer to current pair
-            try self.polymerization_buffer.appendSlice(self.polymer_template[i .. i + 2]);
-
-            // Polymerize current buffer correct number of times
-            var time: usize = 0;
-            while (time < times) : (time += 1) {
-                //std.log.err("    Step {d}", .{time});
-                try self.polymerize_buffer();
-            }
-
-            // Count frequency of items in resulting buffer.  Omit the beginning and end
-            // value, since they are counted as part of the original template later
-            for (self.polymerization_buffer.items[1 .. self.polymerization_buffer.items.len - 1]) |ch| {
-                try self.output_frequency.put(ch, (self.output_frequency.get(ch) orelse 0) + 1);
+        // Break initial template down into its pairs
+        {
+            var i: usize = 0;
+            while (i <= self.polymer_template.len - 2) : (i += 1) {
+                const pair = Pair.initFromSlice(self.polymer_template[i .. i + 2]);
+                try pair_counts.put(pair, (pair_counts.get(pair) orelse 0) + 1);
             }
         }
 
-        // Count letters occuring in initial polymer template, since we omitted those from above
-        for (self.polymer_template) |ch| {
-            try self.output_frequency.put(ch, (self.output_frequency.get(ch) orelse 0) + 1);
-        }
-    }
+        // Perform polymerization via the following steps:
+        //    1. For each pair, examine its mapping in our rules
+        //    2. If it maps, add the two resulting pairs to the new map
+        //    3. If it doesn't map, simply transcribe it over
+        {
+            var cur_time: usize = 0;
 
-    fn polymerize_buffer(self: *Self) !void {
-        var i: usize = 0;
-        while (i <= self.polymerization_buffer.items.len - 2) : (i += 1) {
-            const cur_pair = self.polymerization_buffer.items[i .. i + 2];
+            // Temporary map we will use to keep track of the current set of pairs we're computing
+            // (since all replacements happen simultaneously, and we cannot modify the original list
+            // as we are iterating through it).
+            var new_pair_counts = util.Map(Pair, usize).init(self.allocator);
+            defer new_pair_counts.deinit();
+            while (cur_time < times) : (cur_time += 1) {
+                // Go through each current pair
+                var pairs_it = pair_counts.iterator();
+                while (pairs_it.next()) |entry| {
+                    // Get value to be inserted, if any
+                    const inserted_value = self.insertion_rules.get(entry.key_ptr.*);
 
-            const map_val = self.insertion_rules.get(cur_pair);
-            if (map_val) |value| {
-                try self.polymerization_buffer.insert(i + 1, value);
-                i += 1; // Increment past the value we just added so we only compare the next original pair
+                    // Pair translates to something new, so add the two new pairs
+                    if (inserted_value) |value| {
+                        const p1 = Pair{ .item1 = entry.key_ptr.item1, .item2 = value };
+                        const p2 = Pair{ .item1 = value, .item2 = entry.key_ptr.item2 };
+                        try new_pair_counts.put(p1, (new_pair_counts.get(p1) orelse 0) + entry.value_ptr.*);
+                        try new_pair_counts.put(p2, (new_pair_counts.get(p2) orelse 0) + entry.value_ptr.*);
+                    } else { // No translation, just translate over existing pair
+                        try new_pair_counts.put(entry.key_ptr.*, entry.value_ptr.*);
+                    }
+                }
+
+                // Switch new with old and set up to re-use old buffer to save on allocation
+                var temp = pair_counts;
+                pair_counts = new_pair_counts;
+                new_pair_counts = temp;
+                new_pair_counts.clearRetainingCapacity();
             }
         }
+
+        // Update count of elements in the polymer.
+        //
+        // Because pairs overlap in the polymer (eg. the second letter of one pair is the first)
+        // letter of the next, we'll only look at the first element of the pair when we're counting
+        // to avoid double counting elements.
+        self.element_frequency = std.mem.zeroes(@TypeOf(self.element_frequency));
+
+        var pairs_it = pair_counts.iterator();
+        while (pairs_it.next()) |entry| {
+            self.element_frequency[entry.key_ptr.item1 - 'A'] += entry.value_ptr.*;
+        }
+
+        // Because we only counted the first set in each pair, the only element we missed counting
+        // is the last element in the resulting polymer chain (because it's the only one that isn't
+        // part of the first element of _some_ pair).  Fortunately, we know what the last one is
+        // (because it hasn't changed from what it was in the original polymer template), so we'll
+        // offset the count accordingly.
+        self.element_frequency[self.polymer_template[self.polymer_template.len - 1] - 'A'] += 1;
     }
 };
+
+pub fn getScoreForPolymer(polymer: PolymerSequence) usize {
+    // Find min and max values (the items they correspond to are irrelevant)
+    const max = util.sliceMax(usize, polymer.element_frequency[0..]);
+
+    // The min value must ignore 0, so we'll find it manually
+    const min: usize = blk: {
+        var min: usize = std.math.maxInt(usize);
+        for (polymer.element_frequency[0..]) |elem| {
+            if (elem != 0 and elem < min) min = elem;
+        }
+        break :blk min;
+    };
+
+    // Subtract min from max to get score
+    return max - min;
+}
 
 pub fn main() !void {
     defer {
@@ -81,9 +139,10 @@ pub fn main() !void {
         std.debug.assert(!leaks);
     }
 
-    // Read in the polymer template
+    // Read in the polymer template (which must be a series of pairs)
     var it = util.tokenize(u8, data, "\n");
     const polymer_template = it.next() orelse return error.InvalidInput;
+    if (polymer_template.len % 2 != 0) return error.InvalidInput;
 
     var polymer = PolymerSequence.init(util.gpa, polymer_template);
     defer polymer.deinit();
@@ -98,22 +157,13 @@ pub fn main() !void {
         const insert_value = rule_it.next() orelse return error.InvalidInput;
         if (insert_value.len != 1) return error.InvalidInput;
 
-        try polymer.addInsertionRule(pair, insert_value[0]);
+        try polymer.addInsertionRule(Pair.initFromSlice(pair), insert_value[0]);
     }
 
-    // Polymerize 10 times as per part 1
-    try polymer.polymerize(10);
+    // Polymerize x times (change for part 1/part 2 appropriately)
+    try polymer.polymerize(40);
 
-    // Find min and max values (the items they correspond to are irrelevant)
-    var min: u64 = std.math.maxInt(usize);
-    var max: u64 = 0;
-    var value_it = polymer.output_frequency.valueIterator();
-    while (value_it.next()) |value| {
-        if (value.* < min) min = value.*;
-        if (value.* > max) max = value.*;
-    }
-
-    // Subtract min from max to get score
-    const score = max - min;
-    util.print("Part 1: Score is: {d}\n", .{score});
+    // Calculate score
+    const score = getScoreForPolymer(polymer);
+    util.print("Score is: {d}\n", .{score});
 }
