@@ -133,12 +133,55 @@ pub const GridMap = struct {
         while (y < self.getHeight()) : (y += 1) {
             var x: i32 = 0;
             while (x < self.width) : (x += 1) {
-                util.print("{d:2} ", .{self.getValue(.{ .x = x, .y = y })});
+                util.print("{d}", .{self.getValue(.{ .x = x, .y = y })});
             }
             util.print("\n", .{});
         }
     }
 };
+
+pub fn findLeastRiskValue(risk_map: GridMap) !u32 {
+    // Translate map to a goal map
+    var goal_map = try risk_map.riskToGoalMap();
+    defer goal_map.deinit();
+
+    // Roll downhill on goal map from start to goal, adding risk value of path along the way.
+    var cur_pos = util.Point(i32){ .x = 0, .y = 0 };
+    const end = util.Point(i32){ .x = @intCast(i32, goal_map.width - 1), .y = @intCast(i32, goal_map.getHeight() - 1) };
+
+    var risk: u32 = 0;
+    while (!std.meta.eql(cur_pos, end)) {
+        // Find minimum neighbor and select it
+        var min_pos: util.Point(i32) = cur_pos;
+        for (util.cardinalNeighbors) |direction| {
+            const neighbor = util.Point(i32).add(cur_pos, direction);
+            if (neighbor.x < 0 or neighbor.x >= goal_map.width or neighbor.y < 0 or neighbor.y >= goal_map.getHeight()) continue;
+
+            if (goal_map.getValue(neighbor) < goal_map.getValue(min_pos)) {
+                min_pos = neighbor;
+            }
+        }
+
+        // Add minimum cost to risk value and move to neighbor
+        risk += risk_map.getValue(min_pos);
+        cur_pos = min_pos;
+    }
+
+    return risk;
+}
+
+pub fn increaseValue(val: u32, times: u32) u32 {
+    var cur_val: u32 = val;
+    var i: u32 = 0;
+    while (i < times) : (i += 1) {
+        cur_val += 1;
+        if (cur_val == 10) {
+            cur_val = 1;
+        }
+    }
+
+    return cur_val;
+}
 
 pub fn main() !void {
     defer {
@@ -146,40 +189,36 @@ pub fn main() !void {
         std.debug.assert(!leaks);
     }
 
-    // Part 1 only; part 2 is similar algorithm but interprets the map differently.
-    {
-        // Read in risk map from input
-        var risk_map = try GridMap.initFromSerializedData(util.gpa, data);
-        defer risk_map.deinit();
+    // Read in risk map from input
+    var risk_map_block = try GridMap.initFromSerializedData(util.gpa, data);
+    defer risk_map_block.deinit();
 
-        util.print("Size is: {d}x{d}\n", .{ risk_map.width, risk_map.getHeight() });
+    //util.print("Risk map initial tile size is: {d}x{d}\n", .{ risk_map_block.width, risk_map_block.getHeight() });
 
-        // Translate map to a goal map
-        var goal_map = try risk_map.riskToGoalMap();
-        defer goal_map.deinit();
+    // Find risk value for part 1
+    const risk_val_pt1 = try findLeastRiskValue(risk_map_block);
+    util.print("Part 1: Risk value of best path is: {d}\n", .{risk_val_pt1});
 
-        // Roll downhill on goal map from start to goal, adding risk value of path along the way.
-        var cur_pos = util.Point(i32){ .x = 0, .y = 0 };
-        const end = util.Point(i32){ .x = @intCast(i32, goal_map.width - 1), .y = @intCast(i32, goal_map.getHeight() - 1) };
+    // Create map for part 2; duplicate block 5x in both directions
+    const tile_width = risk_map_block.width;
+    const tile_height = risk_map_block.getHeight();
+    var risk_map = try GridMap.init(util.gpa, tile_width * 5, tile_height * 5);
+    defer risk_map.deinit();
+    var y: u32 = 0;
+    while (y < risk_map.width) : (y += 1) {
+        var x: u32 = 0;
+        while (x < risk_map.getHeight()) : (x += 1) {
+            // Find corresponding position in original tile
+            const orig_pos = util.Point(i32){ .x = @intCast(i32, x % tile_width), .y = @intCast(i32, y % tile_height) };
 
-        var risk: u32 = 0;
-        while (!std.meta.eql(cur_pos, end)) {
-            // Find minimum neighbor and select it
-            var min_pos: util.Point(i32) = cur_pos;
-            for (util.cardinalNeighbors) |direction| {
-                const neighbor = util.Point(i32).add(cur_pos, direction);
-                if (neighbor.x < 0 or neighbor.x >= goal_map.width or neighbor.y < 0 or neighbor.y >= goal_map.getHeight()) continue;
-
-                if (goal_map.getValue(neighbor) < goal_map.getValue(min_pos)) {
-                    min_pos = neighbor;
-                }
-            }
-
-            // Add minimum cost to risk value and move to neighbor
-            risk += risk_map.getValue(min_pos);
-            cur_pos = min_pos;
+            // Current value is that value, plus the number of tiles above or left, whichever is
+            // greater.
+            const tiles_preceding = x / tile_width + y / tile_height;
+            risk_map.setValue(.{ .x = @intCast(i32, x), .y = @intCast(i32, y) }, increaseValue(risk_map_block.getValue(orig_pos), tiles_preceding));
         }
-
-        util.print("Risk value of best path is: {d}\n", .{risk});
     }
+
+    // Find risk value for part 2
+    const risk_val_pt2 = try findLeastRiskValue(risk_map);
+    util.print("Part 2: Risk value of best path is: {d}\n", .{risk_val_pt2});
 }
