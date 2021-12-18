@@ -11,14 +11,6 @@ const FuelCalculation = enum {
     GeometricSum,
 };
 
-/// Utilizes a closed-form solution to find a geometric sum of all terms between 1 and n.
-///
-/// For example, for n = 3, the function returns 1 + 2 + 3 = 6 via the standard closed-form solution
-/// n * (n-1) / 2.
-pub fn geometricSummation(n: u32) u32 {
-    return @floatToInt(u32, @intToFloat(f32, n) * (@intToFloat(f32, n) + 1.0) / 2.0);
-}
-
 // Find the fuel cost of the alignment position with the lowest fuel cost, given the current positions.
 // Fuel usage will be calculated according to the given algorithm.
 pub fn findEasiestAlignmentPosition(positions: []const u32, fuel_calculation: FuelCalculation) !u32 {
@@ -34,7 +26,7 @@ pub fn findEasiestAlignmentPosition(positions: []const u32, fuel_calculation: Fu
             const move_distance = util.absCast(@intCast(i32, pos) - @intCast(i32, i));
             fuel += switch (fuel_calculation) {
                 .Linear => move_distance,
-                .GeometricSum => geometricSummation(move_distance),
+                .GeometricSum => util.geometricSummation(move_distance),
             };
             if (fuel >= minFuel) continue :cur_align_pos;
         }

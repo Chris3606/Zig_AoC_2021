@@ -226,6 +226,14 @@ pub fn sliceLenDesc(comptime T: type) fn (void, []const T, []const T) bool {
     return impl.inner;
 }
 
+/// Utilizes a closed-form solution to find a geometric sum of all terms between 1 and n.
+///
+/// For example, for n = 3, the function returns 1 + 2 + 3 = 6 via the standard closed-form solution
+/// n * (n-1) / 2.
+pub fn geometricSummation(n: anytype) @TypeOf(n) {
+    return @floatToInt(@TypeOf(n), @intToFloat(f32, n) * (@intToFloat(f32, n) + 1.0) / 2.0);
+}
+
 // Useful stdlib functions
 pub const tokenize = std.mem.tokenize;
 pub const split = std.mem.split;
