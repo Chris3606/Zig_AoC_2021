@@ -3,221 +3,201 @@ const util = @import("util.zig");
 
 const data = @embedFile("../data/day16.txt");
 
-pub const InitError = error{ OutOfMemory, InvalidInput };
-pub const ValueError = error{InvalidInput};
+const ParseError = error{ InvalidInput, OutOfMemory, EndOfStream };
 
-const LiteralPacketData = struct {
+const Reader = std.io.BitReader(.Big, std.io.FixedBufferStream([]u8).Reader);
+
+const BitReader = struct {
     const Self = @This();
+    reader: Reader,
+    bits_read: usize = 0,
 
-    value: u32,
-    bits_used: usize,
-
-    pub fn initFromSerialized(allocator: *util.Allocator, serialized_data: []const u8) InitError!Self {
-        var current_data = serialized_data;
-
-        var num_buf = util.List(u8).init(allocator);
-        defer num_buf.deinit();
-
-        var literal = Self{ .value = 0, .bits_used = 0 };
-        while (current_data.len >= 5) {
-            const bit_group = current_data[0..5];
-            literal.bits_used += 5;
-
-            const int_val = util.parseInt(u4, bit_group[1..], 2) catch {
-                return error.InvalidInput;
-            };
-            literal.value <<= 4;
-            literal.value |= int_val;
-            if (bit_group[0] == '0') break;
-
-            current_data = current_data[5..];
-        } else return error.InvalidInput;
-
-        return literal;
+    /// Bit-reading function that records number of bytes read
+    pub fn readBitsNoEof(self: *Self, comptime U: type, bits: usize) !U {
+        self.bits_read += bits;
+        return self.reader.readBitsNoEof(U, bits);
     }
 };
 
-const OperatorPacketData = struct {
+pub const PacketHeader = struct {
     const Self = @This();
+    version: u3,
+    type_id: u3,
 
-    packets: util.List(Packet),
-    bits_used: usize,
+    pub fn deserialize(reader: *BitReader) ParseError!Self {
+        return Self{
+            .version = try reader.readBitsNoEof(u3, 3),
+            .type_id = try reader.readBitsNoEof(u3, 3),
+        };
+    }
+};
 
-    pub fn initFromSerialized(allocator: *util.Allocator, serialized_data: []const u8) InitError!Self {
-        var self = Self{ .packets = util.List(Packet).init(allocator), .bits_used = 0 };
-        errdefer self.deinit();
+pub const Literal = struct {
+    const Self = @This();
+    value: u32,
 
-        if (serialized_data.len == 0) return error.InvalidInput;
+    pub fn deserialize(reader: *BitReader) ParseError!Self {
+        var self = Self{ .value = 0 };
 
-        // Length type ID
-        self.bits_used += 1;
-        switch (serialized_data[0]) {
-            // Next 15 bits are a number that represents total length in bits of sub-packets
-            '0' => {
-                self.bits_used += 15;
-                if (serialized_data.len < 16) return error.InvalidInput;
-                const bits_of_packets = util.parseInt(u15, serialized_data[1..16], 2) catch {
-                    return error.InvalidInput;
-                };
+        while (true) {
+            // Read lead bit of varint
+            const lead_bit = try reader.readBitsNoEof(u1, 1);
 
-                // Increment bits used for sub-packets
-                self.bits_used += bits_of_packets;
+            // Read group of 4 into number
+            self.value <<= 4;
+            self.value |= try reader.readBitsNoEof(u4, 4);
 
-                // Read packets until we've gotten all the data
-                var current_data = serialized_data[16 .. 16 + bits_of_packets];
-                while (current_data.len > 0) {
-                    const packet = try Packet.initFromSerialized(allocator, current_data);
-                    try self.packets.append(packet);
-                    current_data = current_data[packet.bits_used()..];
-                }
-            },
-            // Next 11 bits are a number that represents number of sub-packets immediately contained
-            // by this packet
-            '1' => {
-                self.bits_used += 11;
-                if (serialized_data.len < 12) return error.InvalidInput;
-                const num_of_subpackets = util.parseInt(u11, serialized_data[1..12], 2) catch {
-                    return error.InvalidInput;
-                };
-
-                // Read in the specified number of sub-packets
-                var current_data = serialized_data[12..];
-                while (self.packets.items.len < num_of_subpackets) {
-                    const packet = try Packet.initFromSerialized(allocator, current_data);
-                    try self.packets.append(packet);
-                    current_data = current_data[packet.bits_used()..];
-                }
-
-                // Make sure we update bits used
-                for (self.packets.items) |packet| {
-                    self.bits_used += packet.bits_used();
-                }
-            },
-            else => return error.InvalidInput,
+            // Exit on last group
+            if (lead_bit == 0) break;
         }
 
         return self;
     }
-
-    pub fn deinit(self: *Self) void {
-        for (self.packets.items) |*packet| {
-            packet.deinit();
-        }
-
-        self.packets.deinit();
-    }
 };
 
-const PacketData = union(enum) {
+pub const Operator = struct {
     const Self = @This();
+    operands: []Packet,
+    allocator: *util.Allocator,
 
-    literal: LiteralPacketData,
-    operator: OperatorPacketData,
+    pub fn deserialize(reader: *BitReader, allocator: *util.Allocator) ParseError!Self {
+        var operands = util.List(Packet).init(allocator);
+        errdefer operands.deinit();
 
-    pub fn initFromSerialized(allocator: *util.Allocator, header: PacketHeader, serialized_data: []const u8) InitError!Self {
-        return switch (header.type_id) {
-            4 => .{ .literal = try LiteralPacketData.initFromSerialized(allocator, serialized_data) },
-            else => .{ .operator = try OperatorPacketData.initFromSerialized(allocator, serialized_data) },
+        const length_type_id = try reader.readBitsNoEof(u1, 1);
+        switch (length_type_id) {
+            // Next 15 bits are a number == total length in bits of sub-packets
+            0 => {
+                const bit_length = try reader.readBitsNoEof(u15, 15);
+                const starting_length = reader.bits_read;
+                while (reader.bits_read - starting_length < bit_length) {
+                    const packet = try Packet.deserialize(reader, allocator);
+                    try operands.append(packet);
+                }
+                if (reader.bits_read - starting_length != bit_length) return error.InvalidInput;
+            },
+            // Next 11 bits are a number == number of sub-packets immediately contained in this packet.
+            1 => {
+                const num_packets = try reader.readBitsNoEof(u11, 11);
+                while (operands.items.len < num_packets) {
+                    const packet = try Packet.deserialize(reader, allocator);
+                    try operands.append(packet);
+                }
+            },
+        }
+
+        return Self{
+            .operands = operands.toOwnedSlice(),
+            .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *Self) void {
-        switch (self.*) {
-            .operator => self.operator.deinit(),
-            else => {},
+        for (self.operands) |*operand| {
+            operand.deinit();
         }
-    }
-
-    pub fn bits_used(self: Self) usize {
-        return switch (self) {
-            .literal => |val| val.bits_used,
-            .operator => |val| val.bits_used,
-        };
+        self.allocator.free(self.operands);
     }
 };
 
-const Packet = struct {
+pub const PacketData = union(enum) {
+    literal: Literal,
+    operator: Operator,
+};
+
+pub const Packet = struct {
     const Self = @This();
 
     header: PacketHeader,
     data: PacketData,
 
-    pub fn initFromSerialized(allocator: *util.Allocator, serialized_data: []const u8) InitError!Self {
-        const header = try PacketHeader.initFromSerialized(serialized_data[0..6]);
+    pub fn deserialize(reader: *BitReader, allocator: *util.Allocator) ParseError!Self {
+        const header = try PacketHeader.deserialize(reader);
 
         return Self{
             .header = header,
-            .data = try PacketData.initFromSerialized(allocator, header, serialized_data[6..]),
+            .data = switch (header.type_id) {
+                4 => PacketData{ .literal = try Literal.deserialize(reader) },
+                else => PacketData{ .operator = try Operator.deserialize(reader, allocator) },
+            },
         };
     }
 
     pub fn deinit(self: *Self) void {
-        self.data.deinit();
+        switch (self.data) {
+            .operator => |*op| op.deinit(),
+            .literal => {},
+        }
     }
 
-    pub fn bits_used(self: Self) usize {
-        return self.header.bits_used + self.data.bits_used();
-    }
-
-    pub fn value(self: Self) ValueError!usize {
+    pub fn value(self: Self) ParseError!u64 {
         switch (self.data) {
             .literal => |val| return val.value,
-            .operator => |val| {
+            .operator => |op_data| {
                 switch (self.header.type_id) {
-                    // Sum packet
+                    // Add
                     0 => {
-                        var sum: usize = 0;
-                        for (val.packets.items) |sub_pkt| {
-                            sum += try sub_pkt.value();
+                        var sum: u64 = 0;
+                        for (op_data.operands) |operand| {
+                            sum += try operand.value();
                         }
 
                         return sum;
                     },
-                    // Product packet
+                    // Product
                     1 => {
-                        var prod: usize = 1;
-                        for (val.packets.items) |sub_pkt| {
-                            prod *= try sub_pkt.value();
+                        var prod: u64 = 1;
+                        for (op_data.operands) |operand| {
+                            prod *= try operand.value();
                         }
 
                         return prod;
                     },
-                    // Min packet
+                    // Min
                     2 => {
-                        var min: usize = std.math.maxInt(usize);
-                        for (val.packets.items) |sub_pkt| {
-                            const sub_value = try sub_pkt.value();
-                            if (sub_value < min) min = sub_value;
+                        var min: u64 = std.math.maxInt(u64);
+                        for (op_data.operands) |operand| {
+                            const val = try operand.value();
+                            if (val < min) min = val;
                         }
 
                         return min;
                     },
-                    // Max packet
+                    // Max
                     3 => {
-                        var max: usize = 0;
-                        for (val.packets.items) |sub_pkt| {
-                            const sub_value = try sub_pkt.value();
-                            if (sub_value > max) max = sub_value;
+                        var max: u64 = 0;
+                        for (op_data.operands) |operand| {
+                            const val = try operand.value();
+                            if (val > max) max = val;
                         }
 
                         return max;
                     },
-                    // Literal packet, not an operator packet
+                    // Literal (not an operator)
                     4 => unreachable,
-                    // Greater-than packet; must have exactly 2 sub-packets
+                    // Greater than
                     5 => {
-                        if (val.packets.items.len != 2) return error.InvalidInput;
-                        return if ((try val.packets.items[0].value()) > (try val.packets.items[1].value())) 1 else 0;
+                        if (op_data.operands.len != 2) return error.InvalidInput;
+
+                        const val1 = try op_data.operands[0].value();
+                        const val2 = try op_data.operands[1].value();
+                        return if (val1 > val2) 1 else 0;
                     },
-                    // Less-than packet; must have exactly 2 sub-packets
+                    // Less than
                     6 => {
-                        if (val.packets.items.len != 2) return error.InvalidInput;
-                        return if ((try val.packets.items[0].value()) < (try val.packets.items[1].value())) 1 else 0;
+                        if (op_data.operands.len != 2) return error.InvalidInput;
+
+                        const val1 = try op_data.operands[0].value();
+                        const val2 = try op_data.operands[1].value();
+                        return if (val1 < val2) 1 else 0;
                     },
-                    // Equal-to packet; must have exactly 2 sub-packets
+                    // Equality
                     7 => {
-                        if (val.packets.items.len != 2) return error.InvalidInput;
-                        return if ((try val.packets.items[0].value()) == (try val.packets.items[1].value())) 1 else 0;
+                        if (op_data.operands.len != 2) return error.InvalidInput;
+
+                        const val1 = try op_data.operands[0].value();
+                        const val2 = try op_data.operands[1].value();
+                        return if (val1 == val2) 1 else 0;
                     },
                 }
             },
@@ -225,86 +205,19 @@ const Packet = struct {
     }
 };
 
-const PacketHeader = struct {
-    const Self = @This();
-
-    version: u3,
-    type_id: u3,
-    bits_used: usize,
-
-    pub fn initFromSerialized(serialized_data: []const u8) InitError!Self {
-        if (serialized_data.len != 6) return error.InvalidInput;
-
-        return Self{
-            .version = util.parseInt(u3, serialized_data[0..3], 2) catch {
-                return error.InvalidInput;
-            },
-            .type_id = util.parseInt(u3, serialized_data[3..], 2) catch {
-                return error.InvalidInput;
-            },
-            .bits_used = 6,
-        };
-    }
-};
-
-/// Takes in a hex string, and returns a binary string representing the same number.
-pub fn hexStringToBinaryString(allocator: *util.Allocator, hex: []const u8) ![]const u8 {
-    var binary = util.List(u8).init(allocator);
-    defer binary.deinit();
-
-    for (hex) |digit| {
-        const binary_mapping = try switch (digit) {
-            '0' => "0000",
-            '1' => "0001",
-            '2' => "0010",
-            '3' => "0011",
-            '4' => "0100",
-            '5' => "0101",
-            '6' => "0110",
-            '7' => "0111",
-            '8' => "1000",
-            '9' => "1001",
-            'A' => "1010",
-            'B' => "1011",
-            'C' => "1100",
-            'D' => "1101",
-            'E' => "1110",
-            'F' => "1111",
-            else => error.InvalidInput,
-        };
-        try binary.appendSlice(binary_mapping);
-    }
-
-    return binary.toOwnedSlice();
-}
-
-/// Sums the version of this packet, and any sub-packets.
-pub fn sum_versions(root_packet: Packet) usize {
-    var version_sum: usize = root_packet.header.version;
+pub fn sumPacketVersions(root_packet: Packet) usize {
+    var sum: usize = root_packet.header.version;
 
     switch (root_packet.data) {
         .literal => {},
-        .operator => |val| {
-            for (val.packets.items) |packet| {
-                version_sum += sum_versions(packet);
+        .operator => |packet_data| {
+            for (packet_data.operands) |operand| {
+                sum += sumPacketVersions(operand);
             }
         },
     }
 
-    return version_sum;
-}
-
-pub fn displayPacket(packet: Packet) void {
-    switch (packet.data) {
-        .literal => |val| util.print("Literal: {d}\n", .{val.value}),
-        .operator => |val| {
-            util.print("Op ID: {d}, sub: {d}\n", .{ packet.header.type_id, val.packets.items.len });
-            for (val.packets.items) |itm| {
-                displayPacket(itm);
-            }
-            util.print("\n", .{});
-        },
-    }
+    return sum;
 }
 
 pub fn main() !void {
@@ -314,17 +227,23 @@ pub fn main() !void {
         _ = leaks;
     }
 
-    const binary = try hexStringToBinaryString(util.gpa, data);
-    defer util.gpa.free(binary);
+    // Allocate buffer for hex value
+    var buf = try util.gpa.alloc(u8, data.len / 2);
+    defer util.gpa.free(buf);
 
-    var initial_packet = try Packet.initFromSerialized(util.gpa, binary);
-    defer initial_packet.deinit();
+    // Get bytes for hex number and a reader to read big-endian numbers from it
+    const bytes = try std.fmt.hexToBytes(buf, data);
+    var reader = BitReader{ .reader = std.io.bitReader(.Big, std.io.fixedBufferStream(bytes).reader()) };
 
-    const packet_version_sum = sum_versions(initial_packet);
-    util.print("Part 1: Version sum is: {d}\n", .{packet_version_sum});
+    // Parse root packet
+    var root_packet = try Packet.deserialize(&reader, util.gpa);
+    defer root_packet.deinit();
 
-    const packet_value = initial_packet.value();
-    util.print("Part 2: Value is {d}\n", .{packet_value});
+    // Part 1
+    const version_sum = sumPacketVersions(root_packet);
+    util.print("Part 1: {d}\n", .{version_sum});
 
-    displayPacket(initial_packet);
+    // Part 2
+    const value = root_packet.value();
+    util.print("Part 2: {d}\n", .{value});
 }
