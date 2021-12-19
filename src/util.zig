@@ -72,6 +72,15 @@ pub const LineType = enum {
     Diagonal,
 };
 
+/// 3D integer point
+pub fn Point3d(comptime T: type) type {
+    return struct {
+        x: T,
+        y: T,
+        z: T,
+    };
+}
+
 /// Line consisting of 2 points
 pub fn Line(comptime T: type) type {
     return struct {
