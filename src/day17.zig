@@ -14,22 +14,24 @@ pub const VelocityTimePair = struct {
 };
 
 // Given the target area, a pair with an x inside the area and the corresponding t value, the function
-// will add any applicable y-values for the pair to the pair_list.
-pub fn addPairsForX(target_area: Rectangle, x_pair: VelocityTimePair, pair_list: util.List(VelocityTimePair)) void {
+// will add any applicable y-values for the pair to the pair_list.  Returns whether the value immediately
+// _overshoots_ the target area.
+pub fn addPairsForX(target_area: Rectangle, x_pair: VelocityTimePair, pair_list: *util.List(VelocityTimePair)) !void {
     var dy: i32 = 0;
-    util.print("Checking x-pair: {}\n", .{x_pair});
+    //util.print("Checking x-pair: {}\n", .{x_pair});
 
     while (true) : (dy += 1) {
         // Find y-value for the given t
         var y_val = util.geometricSummation(dy) - util.geometricSummation(x_pair.time - dy - 1);
-        util.print("    Trying dy={d}; y-value for t={d} is {d}\n", .{ dy, x_pair.time, y_val });
-        util.print("        Rect: {}\n", .{target_area});
+        //util.print("    Trying dy={d}; y-value for t={d} is {d}\n", .{ dy, x_pair.time, y_val });
+        //util.print("        Rect: {}\n", .{target_area});
         // We're short of the target at the required t; so the starting y-velocity was too high.
         if (y_val > target_area.top_left.y) break;
 
-        // Otherwise, if we're in range, count it, and in any case move on to the next
+        // Otherwise, if we're in range, count it.  In either case, keep processing until we
+        // overshoot.
         if (y_val >= target_area.bot_right.y) {
-            try pair_list.append(VelocityTimePair{ .velocity = .{ .x = pair.velocity.x, .y = dy }, .time = pair.time });
+            try pair_list.append(VelocityTimePair{ .velocity = .{ .x = x_pair.velocity.x, .y = dy }, .time = x_pair.time });
         }
     }
 }
@@ -68,7 +70,6 @@ pub fn main() !void {
     var x_pairs = util.List(VelocityTimePair).init(util.gpa);
     defer x_pairs.deinit();
 
-    // No x-value lower than this can possibly even reach the box, by definition of geometric sum.
     var dx: i32 = 1;
     while (dx <= target_area.bot_right.x) : (dx += 1) {
         // If this value can't possibly reach the box, then we can just skip it.
@@ -98,50 +99,36 @@ pub fn main() !void {
     var pairs = util.List(VelocityTimePair).init(util.gpa);
     defer pairs.deinit();
 
+    // We're short of the target at the required t; so the starting y-velocity was too high.
+    // However, if the initial x-velocity is equal to the time-step, that means that by the
+    // time the probe has gotten to the target x, it is already falling straight down;
+    // so actually, _any_ timestep greater than the one we found will also work, up until
+    // the point where we overshoot the target area entirely.   TODO: Think about effect
+    // in overall loop, this implementation isn't quite correct.  Think we need to be _outside_
+    // of the current y-check
+
     for (x_pairs.items) |*pair| {
-        // We'll assume the solution is positive, for the time being.
-        var dy: i32 = 0;
-        util.print("Checking x-pair: {}\n", .{pair.*});
+        try addPairsForX(target_area, pair.*, &pairs);
 
-        while (true) : (dy += 1) {
-            // Find y-value for the given t
-            var y_val = util.geometricSummation(dy) - util.geometricSummation(pair.time - dy - 1);
-            util.print("    Trying dy={d}; y-value for t={d} is {d}\n", .{ dy, pair.time, y_val });
-            util.print("        Rect: {}\n", .{target_area});
-            // We're short of the target at the required t; so the starting y-velocity was too high.
-            // However, if the initial x-velocity is equal to the time-step, that means that by the
-            // time the probe has gotten to the target x, it is already falling straight down;
-            // so actually, _any_ timestep greater than the one we found will also work, up until
-            // the point where we overshoot the target area entirely.   TODO: Think about effect
-            // in overall loop, this implementation isn't quite correct.  Think we need to be _outside_
-            // of the current y-check
-            if (y_val > target_area.top_left.y) break;
-            // if (y_val > target_area.top_left.y) {
-            //     if (pair.velocity.x == pair.time) {
-            //         var t = pair.time + 1;
-            //         while (true) : (t += 1) {
-            //             var y_val1 = util.geometricSummation(dy) - util.geometricSummation(t - dy - 1);
-            //             if (y_val1 > target_area.top_left.y) continue;
-            //             // Otherwise, if we're in range, count it, and in any case move on to the next
-            //             if (y_val1 >= target_area.bot_right.y) {
-            //                 try pairs.append(VelocityTimePair{ .velocity = .{ .x = pair.velocity.x, .y = dy }, .time = t });
-            //             } else break;
-            //         }
-            //     }
-            //     break;
-            // }
+        // If the intial x-velocity is equal to the time-step where the x-intersect with the box
+        // happens, that means that by the time the probe has gotten to the target x-value, it is
+        // already falling straight down.  In this case, _any_ timestep greater than the one we found
+        // will also satisfy the intersect; up until the point where the y-value overshoots the box.
+        // So, we'll check increasing t-values until we overshoot.
+        if (pair.velocity.x == pair.time) {
 
-            // Otherwise, if we're in range, count it, and in any case move on to the next
-            if (y_val >= target_area.bot_right.y) {
-                try pairs.append(VelocityTimePair{ .velocity = .{ .x = pair.velocity.x, .y = dy }, .time = pair.time });
+            // TODO: Better way to capture this bound
+            //pair.time = target_area.bot_right.y - 1;
+            var i: usize = 0;
+            while (i < 2000) : (i += 1) {
+                pair.time += 1;
+                try addPairsForX(target_area, pair.*, &pairs);
             }
         }
-        // TODO: NOW if the pair qualifies under x_velocity == time, do the thing again with all new time values until you overshoot
     }
 
     // Now, find the pair that reaches the maximum y value; which is just the geometric summation
     // of the y-velocity (since we know the y-velocity is positive)
-    util.print("Pairs: {d}\n", .{pairs.items.len});
     var max: i32 = std.math.minInt(i32);
     var optimal_velocity: util.Point(i32) = undefined;
     for (pairs.items) |pair| {
@@ -154,4 +141,5 @@ pub fn main() !void {
     }
 
     util.print("Part 1: Optimal trajectory is {}, with a max y-value of {d}\n", .{ optimal_velocity, max });
+    util.print("Part 2: Number of unique pairs: {d}\n", .{pairs.items.len});
 }
