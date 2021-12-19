@@ -1,7 +1,7 @@
 const std = @import("std");
 const util = @import("util.zig");
 
-const data = @embedFile("../data/day17_sample.txt");
+const data = @embedFile("../data/day17.txt");
 
 pub const Rectangle = struct {
     top_left: util.Point(i32),
@@ -17,14 +17,11 @@ pub const VelocityTimePair = struct {
 // will add any applicable y-values for the pair to the pair_list.  Returns whether the value immediately
 // _overshoots_ the target area.
 pub fn addPairsForX(target_area: Rectangle, x_pair: VelocityTimePair, pair_list: *util.List(VelocityTimePair)) !void {
-    var dy: i32 = 0;
+    var dy: i32 = -1000;
     //util.print("Checking x-pair: {}\n", .{x_pair});
 
     while (true) : (dy += 1) {
-        // Find y-value for the given t
-        var y_val = util.geometricSummation(dy) - util.geometricSummation(x_pair.time - dy - 1);
-        //util.print("    Trying dy={d}; y-value for t={d} is {d}\n", .{ dy, x_pair.time, y_val });
-        //util.print("        Rect: {}\n", .{target_area});
+        const y_val = util.geometricSummation(dy) - util.geometricSummation(x_pair.time - dy - 1);
         // We're short of the target at the required t; so the starting y-velocity was too high.
         if (y_val > target_area.top_left.y) break;
 
@@ -86,7 +83,6 @@ pub fn main() !void {
             if (x_at_time < target_area.top_left.x) continue;
 
             // We've found some x-velocity that works.
-            //util.print("Valid solution for x={d}: dx={d}, t={d}\n", .{ x_at_time, cur_x, t });
             try x_pairs.append(VelocityTimePair{
                 .velocity = .{ .x = dx, .y = 0 },
                 .time = t,
@@ -94,31 +90,23 @@ pub fn main() !void {
         }
     }
 
-    // Now, for each x-velocity that _could_ reach the target, attempt to find some y-value
-    // that will get the probe to the box at that time-value.
+    // Final pairs
     var pairs = util.List(VelocityTimePair).init(util.gpa);
     defer pairs.deinit();
 
-    // We're short of the target at the required t; so the starting y-velocity was too high.
-    // However, if the initial x-velocity is equal to the time-step, that means that by the
-    // time the probe has gotten to the target x, it is already falling straight down;
-    // so actually, _any_ timestep greater than the one we found will also work, up until
-    // the point where we overshoot the target area entirely.   TODO: Think about effect
-    // in overall loop, this implementation isn't quite correct.  Think we need to be _outside_
-    // of the current y-check
-
+    // Now, for each x-velocity that _could_ reach the target, attempt to find some y-value
+    // that will get the probe to the box at that time-value.
     for (x_pairs.items) |*pair| {
         try addPairsForX(target_area, pair.*, &pairs);
 
         // If the intial x-velocity is equal to the time-step where the x-intersect with the box
         // happens, that means that by the time the probe has gotten to the target x-value, it is
         // already falling straight down.  In this case, _any_ timestep greater than the one we found
-        // will also satisfy the intersect; up until the point where the y-value overshoots the box.
-        // So, we'll check increasing t-values until we overshoot.
+        // will also satisfy the intersect; up until the point where the y-value is guaranteed to
+        // overshoot the box (eg. at 2 x area height). So, we'll check increasing t-values until
+        // that point.
         if (pair.velocity.x == pair.time) {
-
-            // TODO: Better way to capture this bound
-            //pair.time = target_area.bot_right.y - 1;
+            // TODO: Better control of upper bound
             var i: usize = 0;
             while (i < 2000) : (i += 1) {
                 pair.time += 1;
@@ -132,7 +120,6 @@ pub fn main() !void {
     var max: i32 = std.math.minInt(i32);
     var optimal_velocity: util.Point(i32) = undefined;
     for (pairs.items) |pair| {
-        //util.print("Checking: {}\n", .{pair});
         const highest_y = util.geometricSummation(pair.velocity.y);
         if (highest_y > max) {
             max = highest_y;
@@ -140,6 +127,13 @@ pub fn main() !void {
         }
     }
 
+    // Find unique velocities for part 2
+    var unique_velocities = util.Map(util.Point(i32), void).init(util.gpa);
+    defer unique_velocities.deinit();
+    for (pairs.items) |pair| {
+        try unique_velocities.put(pair.velocity, {});
+    }
+
     util.print("Part 1: Optimal trajectory is {}, with a max y-value of {d}\n", .{ optimal_velocity, max });
-    util.print("Part 2: Number of unique pairs: {d}\n", .{pairs.items.len});
+    util.print("Part 2: Number of unique pairs: {d}\n", .{unique_velocities.count()});
 }
