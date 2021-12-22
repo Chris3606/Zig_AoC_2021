@@ -71,4 +71,12 @@ pub fn main() !void {
         const scanner = try Scanner.deserialize(util.gpa, scanner_data);
         try scanners.append(scanner);
     }
+
+    // Check each scanner for potential overlap
+    for (scanners.items) |*scanner1, idx| {
+        for (scanners.items[idx + 1 ..]) |*scanner2| {
+            // For each pair of scanners, iterate through all orientations
+
+        }
+    }
 }
